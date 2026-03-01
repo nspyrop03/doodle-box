@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>DoodleBox</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.2/mqttws31.min.js"></script>
+    <style>
+        body { font-family: sans-serif; text-align: center; background-color: #f4f4f9; padding: 20px; }
+        .container { max-width: 650px; margin: 0 auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
+        
+        /* Settings Panel */
+        #settingsPanel { display: block; text-align: left; }
+        input { width: 100%; padding: 10px; margin: 5px 0 15px 0; box-sizing: border-box; }
+        
+        /* Canvas Panel */
+        #canvasPanel { display: none; }
+        #drawCanvas { border: 4px solid #333; background-color: white; width: 100%; max-width: 592px; height: auto; aspect-ratio: 296/128; cursor: crosshair; touch-action: none; }
+        
+        button { padding: 10px 20px; font-size: 16px; margin: 5px; cursor: pointer; border: none; border-radius: 5px; font-weight: bold; }
+        .btn-green { background-color: #2ed573; color: white; }
+        .btn-red { background-color: #ff4757; color: white; }
+        .btn-gray { background-color: #747d8c; color: white; }
+        
+        #status { margin-top: 15px; font-size: 14px; color: #555; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>DoodleBox</h2>
+    <div id="status">Status: Waiting for credentials...</div>
+
+    <div id="settingsPanel">
+        <h3>Connection Settings</h3>
+        <label>HiveMQ Cluster URL:</label>
+        <input type="text" id="mqttUrl" placeholder="e.g., 123abc456.s1.eu.hivemq.cloud">
+        
+        <label>Username:</label>
+        <input type="text" id="mqttUser" placeholder="Your HiveMQ username">
+        
+        <label>Password:</label>
+        <input type="password" id="mqttPass" placeholder="Your HiveMQ password">
+        
+        <button class="btn-green" onclick="saveAndConnect()">Save & Connect</button>
+    </div>
+
+    <div id="canvasPanel">
+        <canvas id="drawCanvas" width="296" height="128"></canvas>
+        <br>
+        <button class="btn-red" onclick="clearCanvas()">Clear Canvas</button>
+        <button class="btn-green" onclick="sendDrawing()">Send to Screen</button>
+        <button class="btn-gray" onclick="showSettings()">⚙️ Settings</button>
+    </div>
+</div>
+
+<script>
+    let client;
+    const mqtt_port = 8884; 
+    const topic = "project/drawing";
+
+    const canvas = document.getElementById('drawCanvas');
+    const ctx = canvas.getContext('2d');
+    
+    window.onload = function() {
+        initCanvas();
+        // Load saved credentials if they exist
+        if(localStorage.getItem("mqttUrl")) {
+            document.getElementById("mqttUrl").value = localStorage.getItem("mqttUrl");
+            document.getElementById("mqttUser").value = localStorage.getItem("mqttUser");
+            document.getElementById("mqttPass").value = localStorage.getItem("mqttPass");
+            saveAndConnect(); // Auto-connect
+        }
+    };
+
+    function initCanvas() {
+        ctx.fillStyle = "white";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.strokeStyle = "black";
+        ctx.lineWidth = 3;
+        ctx.lineCap = "round";
+    }
+
+    // Connection Logic
+    function saveAndConnect() {
+        const url = document.getElementById("mqttUrl").value.trim();
+        const user = document.getElementById("mqttUser").value.trim();
+        const pass = document.getElementById("mqttPass").value.trim();
+
+        if(!url || !user || !pass) {
+            alert("Please fill in all fields.");
+            return;
+        }
+
+        // Save to browser memory securely
+        localStorage.setItem("mqttUrl", url);
+        localStorage.setItem("mqttUser", user);
+        localStorage.setItem("mqttPass", pass);
+
+        document.getElementById("status").innerText = "Status: Connecting...";
+        
+        const clientId = "WebClient_" + Math.random().toString(16).substr(2, 8);
+        client = new Paho.MQTT.Client(url, Number(mqtt_port), clientId);
+        client.onConnectionLost = onConnectionLost;
+
+        client.connect({
+            userName: user,
+            password: pass,
+            useSSL: true,
+            onSuccess: onConnect,
+            onFailure: onFailure
+        });
+    }
+
+    function onConnect() {
+        document.getElementById("status").innerText = "Status: Connected & Ready!";
+        document.getElementById("status").style.color = "#2ed573";
+        document.getElementById("settingsPanel").style.display = "none";
+        document.getElementById("canvasPanel").style.display = "block";
+    }
+
+    function onFailure(responseObject) {
+        document.getElementById("status").innerText = "Status: Connection Failed. Check credentials.";
+        document.getElementById("status").style.color = "#ff4757";
+    }
+
+    function onConnectionLost(responseObject) {
+        if (responseObject.errorCode !== 0) {
+            document.getElementById("status").innerText = "Status: Disconnected.";
+            document.getElementById("status").style.color = "#ff4757";
+            showSettings();
+        }
+    }
+
+    function showSettings() {
+        document.getElementById("settingsPanel").style.display = "block";
+        document.getElementById("canvasPanel").style.display = "none";
+    }
+
+    // Drawing Logic
+    let isDrawing = false;
+    canvas.addEventListener('mousedown', startDrawing);
+    canvas.addEventListener('mousemove', draw);
+    canvas.addEventListener('mouseup', stopDrawing);
+    canvas.addEventListener('mouseout', stopDrawing);
+    canvas.addEventListener('touchstart', startDrawing, {passive: false});
+    canvas.addEventListener('touchmove', draw, {passive: false});
+    canvas.addEventListener('touchend', stopDrawing);
+
+    function getCoordinates(e) {
+        const rect = canvas.getBoundingClientRect();
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
+        let clientX = e.clientX; let clientY = e.clientY;
+        if (e.touches && e.touches.length > 0) {
+            clientX = e.touches[0].clientX; clientY = e.touches[0].clientY;
+        }
+        return { x: (clientX - rect.left) * scaleX, y: (clientY - rect.top) * scaleY };
+    }
+
+    function startDrawing(e) { e.preventDefault(); isDrawing = true; const pos = getCoordinates(e); ctx.beginPath(); ctx.moveTo(pos.x, pos.y); }
+    function draw(e) { e.preventDefault(); if (!isDrawing) return; const pos = getCoordinates(e); ctx.lineTo(pos.x, pos.y); ctx.stroke(); }
+    function stopDrawing(e) { e.preventDefault(); isDrawing = false; }
+    function clearCanvas() { initCanvas(); }
+
+    // Packing and Sending
+    function sendDrawing() {
+        if (!client || !client.isConnected()) {
+            alert("Not connected to cloud!");
+            return;
+        }
+        document.getElementById("status").innerText = "Status: Sending...";
+        
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+        const buffer = new Uint8Array((canvas.width * canvas.height) / 8);
+        let byteIndex = 0; let bitIndex = 0; let currentByte = 0;
+
+        for (let i = 0; i < imageData.length; i += 4) {
+            const r = imageData[i]; const g = imageData[i+1]; const b = imageData[i+2]; const alpha = imageData[i+3];
+            let isWhite = 1;
+            if (alpha > 128 && (r < 128 || g < 128 || b < 128)) isWhite = 0;
+            if (isWhite) currentByte |= (1 << (7 - bitIndex));
+            bitIndex++;
+            if (bitIndex === 8) { buffer[byteIndex] = currentByte; byteIndex++; bitIndex = 0; currentByte = 0; }
+        }
+
+        const message = new Paho.MQTT.Message(buffer);
+        message.destinationName = topic;
+        message.retained = true; 
+        client.send(message);
+
+        document.getElementById("status").innerText = "Status: Drawing Sent!";
+        setTimeout(() => { document.getElementById("status").innerText = "Status: Connected & Ready!"; }, 3000);
+    }
+</script>
+</body>
+</html>
