@@ -2,8 +2,12 @@
 #include <WiFiClientSecure.h>
 #include <PubSubClient.h>
 #include <GxEPD2_BW.h>
+#include <driver/rtc_io.h>
 
 #include "secrets.h"
+
+#define WAKE_BUTTON GPIO_NUM_33
+#define IMAGE_BYTES 4736
 
 const char* ssid = SECRET_WIFI_SSID;
 const char* password = SECRET_WIFI_PASS;
@@ -19,40 +23,23 @@ const int mqtt_port = 8883;
 // ==========================================
 GxEPD2_BW<GxEPD2_290_BS, GxEPD2_290_BS::HEIGHT> display(GxEPD2_290_BS(/*CS=*/ 5, /*DC=*/ 17, /*RST=*/ 16, /*BUSY=*/ 4));
 
-// ==========================================
-// SECURE CERTIFICATE (Let's Encrypt ISRG Root X1)
-// ==========================================
-const char* root_ca = \
-"-----BEGIN CERTIFICATE-----\n" \
-"MIIFazCCA1OgAwIBAgIRAIIQz7DSQONZRGPgu2OCiwAwDQYJKoZIhvcNAQELBQAw\n" \
-"TzELMAkGA1UEBhMCVVMxKTAnBgNVBAoTIEludGVybmV0IFNlY3VyaXR5IFJlc2Vh\n" \
-"cmNoIEdyb3VwMRUwEwYDVQQDEwxJU1JHIFJvb3QgWDEwHhcNMTUwNjA0MTEwNDM4\n" \
-"WhcNMzUwNjA0MTEwNDM4WjBPMQswCQYDVQQGEwJVUzEpMCcGA1UEChMgSW50ZXJu\n" \
-"ZXQgU2VjdXJpdHkgUmVzZWFyY2ggR3JvdXAxFTATBgNVBAMTDElTUkcgUm9vdCBY\n" \
-"MTCCAiIwDQYJKoZIhvcNAQEBBQADggIPADCCAgoCggIBAK3oJ1yKQzIqiHnncRo7\n" \
-"bTsT/DHIgoRmTfl1A74PHEXGZe6XewGLEXcW+PUQz/s/B1Q2FmQfJ+7gH2j4K3uD\n" \
-"hH+b2bIItO9zUoX7b+o2r6j7f3q3bQ/E0b0e5mZgO5b6Yx6I1w6yZ9b1q9Y/N7s5\n" \
-"m6v1k3r1s3q9l3p3s3m6v1k3r1s3q9l3p3s3m6v1k3r1s3q9l3p3s3m6v1k3r1s3\n" \
-"m6v1k3r1s3q9l3p3s3m6v1k3r1s3q9l3p3s3m6v1k3r1s3q9l3p3s3m6v1k3r1s3\n" \
-"q9l3p3s3m6v1k3r1s3q9l3p3s3m6v1k3r1s3q9l3p3s3m6v1k3r1s3q9l3p3s3m6\n" \
-"v1k3r1s3q9l3p3s3m6v1k3r1s3q9l3p3s3m6v1k3r1s3q9l3p3s3m6v1k3r1s3q9\n" \
-"l3p3s3m6v1k3r1s3q9l3p3s3m6v1k3r1s3q9l3p3s3m6v1k3r1s3q9l3p3s3m6v1\n" \
-"k3r1s3q9l3p3s3m6v1k3r1s3q9l3p3s3m6v1k3r1s3q9l3p3s3m6v1k3r1s3q9l3\n" \
-"p3s3m6v1k3r1s3q9l3p3s3m6v1k3r1s3q9l3p3s3m6v1k3r1s3q9l3p3s3m6v1k3\n" \
-"r1s3q9l3p3s3m6v1k3r1s3q9l3p3s3m6v1k3r1s3q9l3p3s3m6v1k3r1s3q9l3p3\n" \
-"s3m6v1k3r1s3q9l3p3s3m6v1k3r1s3q9l3p3s3m6v1k3r1s3q9l3p3s3m6v1k3r1\n" \
-"s3q9l3p3s3m6v1k3r1s3q9l3p3s3m6v1k3r1s3q9l3p3s3m6v1k3r1s3q9l3p3s3\n" \
-"m6v1k3r1s3q9l3p3s3m6v1k3r1s3q9l3p3s3m6v1k3r1s3q9l3p3s3m6v1k3r1s3\n" \
-"q9l3p3s3m6v1k3r1s3q9l3p3s3m6v1k3r1s3q9l3p3s3m6v1k3r1s3q9l3p3s3m6\n" \
-"v1k3r1s3q9l3p3s3m6v1k3r1s3q9l3p3s3m6v1k3r1s3q9l3p3s3m6v1k3r1s3q9\n" \
-"l3p3s3m6v1k3r1s3q9l3p3s3m6v1k3r1s3q9l3p3s3m6v1k3r1s3q9l3p3s3m6v1\n" \
-"k3r1s3q9l3p3s3m6v1k3r1s3q9l3p3s3m6v1k3r1s3q9l3p3s3m6v1k3r1s3q9l3\n" \
-"p3s3m6v1k3r1s3q9l3p3s3m6v1k3r1s3q9l3p3s3m6v1k3r1s3q9l3p3s3m6v1k3\n" \
-"r1s3q9l3p3s3m6v1k3r1s3q9l3p3s3m6v1k3r1s3q9l3p3s3m6v1k3r1s3q9l3p3\n" \
-"-----END CERTIFICATE-----\n";
-
 WiFiClientSecure espClient;
 PubSubClient client(espClient);
+
+bool newDrawingReceived = false;
+RTC_DATA_ATTR byte lastDrawing[IMAGE_BYTES];
+RTC_DATA_ATTR bool isFirstBoot = true;
+
+bool isDrawingBlank(byte* payload, unsigned int length) {
+  byte firstByte = payload[0];
+
+  for (unsigned int i = 1; i < length; i++) {
+    if (payload[i] != firstByte) {
+      return false;
+    }
+  }
+  return true;
+}
 
 // ==========================================
 // Triggered instantly when mail arrives
@@ -61,37 +48,44 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
   Serial.print("New Drawing Received! Bytes: ");
   Serial.println(length);
 
-  if(length > 1000) { 
-    Serial.println("Updating Screen...");
-    
-    display.setFullWindow();
-    display.firstPage();
-    do {
-      // We pass BOTH colors: GxEPD_WHITE for '1' bits, and GxEPD_BLACK for '0' bits
-      display.drawBitmap(0, 0, payload, 296, 128, GxEPD_WHITE, GxEPD_BLACK);
-    } while (display.nextPage());
-
-    Serial.println("Screen Update Complete! Listening for the next one...");
-  }
-}
-
-void reconnect() {
-  while (!client.connected()) {
-    Serial.print("Connecting to HiveMQ...");
-    if (client.connect("DoodleBox_Simple", mqtt_user, mqtt_pass)) {
-      Serial.println("Connected!");
-      client.subscribe("project/drawing");
-    } else {
-      Serial.print("Failed, rc=");
-      Serial.print(client.state());
-      Serial.println(" Retrying in 5 seconds...");
-      delay(5000);
+  if(length >= IMAGE_BYTES) { 
+    if (isDrawingBlank(payload, IMAGE_BYTES)) {
+      Serial.println("Received an empty canvas! Ignoring to save previous drawing.");
+      newDrawingReceived = true; 
+      return;
     }
+
+    bool drawingChanged = false;
+    
+    if(isFirstBoot) {
+      Serial.println("First boot detected. Forcing screen update...");
+      drawingChanged = true;
+      isFirstBoot = false;
+    } else if(memcmp(lastDrawing, payload, IMAGE_BYTES) != 0) {
+      Serial.println("New doodle detected!");
+      drawingChanged = true;
+    } else {
+      Serial.println("Drawing is exactly the same! Skipping refresh...");
+    }
+
+    if(drawingChanged) {
+      Serial.println("Updating screen...");
+      memcpy(lastDrawing, payload, IMAGE_BYTES);
+
+      display.setFullWindow();
+      display.firstPage();
+      do {
+        // We pass BOTH colors: GxEPD_WHITE for '1' bits, and GxEPD_BLACK for '0' bits
+        display.drawBitmap(0, 0, payload, 296, 128, GxEPD_WHITE, GxEPD_BLACK);
+      } while (display.nextPage());
+    }
+    newDrawingReceived = true;
   }
 }
 
 void setup() {
   Serial.begin(115200);
+  Serial.println("\n\nWAKING UP\n\n");
   
   // Initialize E-ink display
   display.init(115200, true, 2, false);
@@ -100,27 +94,61 @@ void setup() {
   // Connect to Wi-Fi
   Serial.print("Connecting to Wi-Fi");
   WiFi.begin(ssid, password);
-  while (WiFi.status() != WL_CONNECTED) {
+
+  int wifiAttempts = 0;
+  while (WiFi.status() != WL_CONNECTED && wifiAttempts < 20) {
     delay(500);
     Serial.print(".");
+    wifiAttempts++;
   }
-  Serial.println("\nWi-Fi Connected!");
 
-  // Setup MQTT
-  //espClient.setCACert(root_ca);
-  espClient.setInsecure();
-  client.setServer(mqtt_server, mqtt_port);
-  client.setCallback(mqttCallback);
-  client.setBufferSize(6000); // Crucial for image data size
+  if(WiFi.status() == WL_CONNECTED) {
+    Serial.println("\nWi-Fi Connected!");
+
+    // Setup MQTT
+    espClient.setInsecure();
+    client.setServer(mqtt_server, mqtt_port);
+    client.setCallback(mqttCallback);
+    client.setBufferSize(6000); // Crucial for image data size
+
+    if(client.connect("DoodleBox_Device", mqtt_user, mqtt_pass)) {
+      Serial.println("Connected to HiveMQ Cloud!");
+      client.subscribe("project/drawing");
+
+      Serial.println("Checking mailbox...");
+      unsigned long startTime = millis();
+      while(millis() - startTime < 5000) {
+        client.loop();
+        delay(10);
+      }
+      
+      if(!newDrawingReceived) {
+        Serial.println("Mailbox is empty.");
+      }
+    } else {
+      Serial.print("Failed, rc=");
+      Serial.print(client.state());
+    }
+  } else {
+    Serial.println("Failed to connect to the WiFi!");
+  }
+
+  Serial.println("Powering down screen and going to Deep Sleep...");
+  
+  // Cut power to the screen to save battery and prevent burn-in
+  display.hibernate(); 
+
+  // Configure the Wake Button
+  // Tell it to wake up when Pin 33 goes LOW (0)
+  esp_sleep_enable_ext0_wakeup(WAKE_BUTTON, 0); 
+  // Turn on the internal pull-up resistor
+  rtc_gpio_pullup_en(WAKE_BUTTON);
+  rtc_gpio_pulldown_dis(WAKE_BUTTON);
+
+  uint64_t time_in_sec = 60;
+  esp_sleep_enable_timer_wakeup(time_in_sec * 1000000ULL); // convert to ms
+
+  esp_deep_sleep_start();
 }
 
-// ==========================================
-// MAIN LOOP (Always Awake, Always Listening)
-// ==========================================
-void loop() {
-  if (!client.connected()) {
-    reconnect();
-  }
-  // This function keeps the ESP32 listening to the cloud continuously
-  client.loop(); 
-}
+void loop() { }
