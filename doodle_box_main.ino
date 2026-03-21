@@ -121,7 +121,9 @@ void setup() {
   display.setRotation(1);
 
   Serial.println("Trying to connect to the WiFi through the WiFiManager...");
-  //WiFi.mode(WIFI_STA);
+  WiFi.disconnect(true); // just to be sure
+  delay(100);
+  
   WiFi.setTxPower(WIFI_POWER_8_5dBm); // low power
 
   String macText = String(Network.macAddress());
@@ -129,7 +131,8 @@ void setup() {
 
   WiFiManager wifiManager;
   String setupName = "DoodleBox-Setup-" + macText;
-  wifiManager.setConfigPortalTimeout(5 * 60); // keep the portal alive for 5 minutes
+  wifiManager.setConnectTimeout(15); // in seconds
+  wifiManager.setConfigPortalTimeout(3 * 60); // keep the portal alive for 5 minutes
   wifiManager.autoConnect(setupName.c_str());
 
   if(WiFi.status() == WL_CONNECTED) {
@@ -172,6 +175,10 @@ void setup() {
   
   // Cut power to the screen to save battery and prevent burn-in
   display.hibernate(); 
+
+  WiFi.disconnect(true);
+  delay(100);
+  WiFi.mode(WIFI_OFF); // Shut off the antenna cleanly
 
   // Configure the Wake Button: wake up when Pin 33 goes LOW (0)
   esp_sleep_enable_ext0_wakeup(WAKE_BUTTON, 0); 
