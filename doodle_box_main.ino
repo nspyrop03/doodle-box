@@ -16,6 +16,9 @@ const char* mqtt_user = SECRET_MQTT_USER;
 const char* mqtt_pass = SECRET_MQTT_PASS;
 const int mqtt_port = 8883;
 
+const char* ssid = SECRET_WIFI_SSID;
+const char* password = SECRET_WIFI_PASS;
+
 // ==========================================
 // E-INK DISPLAY SETUP (WeAct 2.9" 296x128)
 // Pins: BUSY=4, RST=16, DC=17, CS=5, CLK(SCL)=18, DIN(SDA)=23
@@ -114,6 +117,14 @@ void setup() {
     wokeUpFromButton = true; 
   }
 
+  // Startup debug
+  if(wokeUpFromButton) {
+    digitalWrite(BUZZER_PIN, LOW);  delay(50);
+    digitalWrite(BUZZER_PIN, HIGH); delay(100);
+    digitalWrite(BUZZER_PIN, LOW);  delay(50);
+    digitalWrite(BUZZER_PIN, HIGH); delay(500);
+  }
+
   Serial.println("\n\nWAKING UP\n\n");
   
   // Initialize E-ink display
@@ -128,13 +139,25 @@ void setup() {
 
   String macText = String(Network.macAddress());
   Serial.println("MAC Address: " + macText);
-
+  
   WiFiManager wifiManager;
   String setupName = "DoodleBox-Setup-" + macText;
   wifiManager.setConnectTimeout(15); // in seconds
-  wifiManager.setConfigPortalTimeout(3 * 60); // keep the portal alive for 5 minutes
+  wifiManager.setConfigPortalTimeout(3 * 60); // keep the portal alive for 3 minutes
   wifiManager.autoConnect(setupName.c_str());
+  
+  /*
+  Serial.print("Connecting to Wi-Fi");
+  WiFi.begin(ssid, password);
 
+  const int MAX_WIFI_ATTEMPTS = 50;
+  int wifiAttempts = 0;
+  while (WiFi.status() != WL_CONNECTED && wifiAttempts < MAX_WIFI_ATTEMPTS) {
+    delay(200);
+    Serial.print(".");
+    wifiAttempts++;
+  }
+  */
   if(WiFi.status() == WL_CONNECTED) {
     Serial.println("\nWi-Fi Connected!");
 
@@ -186,7 +209,7 @@ void setup() {
   rtc_gpio_pullup_en(WAKE_BUTTON);
   rtc_gpio_pulldown_dis(WAKE_BUTTON);
 
-  const uint64_t time_in_sec = 60;
+  const uint64_t time_in_sec = 30 * 60;
   esp_sleep_enable_timer_wakeup(time_in_sec * 1000000ULL); // convert to ms
 
   esp_deep_sleep_start();
